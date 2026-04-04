@@ -29,21 +29,22 @@
 #include <vector>
 
 #include "collector_client.h"
-#include "sdv/databroker/v1/types.pb.h"
+#include "kuksa/val/v2/types.pb.h"
+
 namespace sdv {
 namespace broker_feeder {
 
-
+// In v2 the databroker pre-registers all VSS signals — no runtime registration
+// step is needed. DatapointMetadata retains only the name (VSS path), optional
+// initial value, and description for documentation purposes.
 struct DatapointMetadata {
     std::string name;
-    sdv::databroker::v1::DataType data_type;
-    sdv::databroker::v1::ChangeType change_type;
-    sdv::databroker::v1::Datapoint initial_value;
+    kuksa::val::v2::Datapoint initial_value;
     std::string description;
 };
 
 using DatapointConfiguration = std::vector<DatapointMetadata>;
-using DatapointValues = std::unordered_map<std::string, sdv::databroker::v1::Datapoint>;
+using DatapointValues = std::unordered_map<std::string, kuksa::val::v2::Datapoint>;
 
 class DataBrokerFeeder {
 public:
@@ -76,7 +77,7 @@ public:
      * @param name Name (path) of the data point to be fed (update).
      * @param value The value to be fed
      */
-    virtual void FeedValue(const std::string& name, const sdv::databroker::v1::Datapoint& value) = 0;
+    virtual void FeedValue(const std::string& name, const kuksa::val::v2::Datapoint& value) = 0;
 
     /**
      * Try to feed a batch of data point values to the broker.

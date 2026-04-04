@@ -17,14 +17,13 @@
 #include <mutex>
 #include <string>
 
-#include "sdv/databroker/v1/types.pb.h"
 #include "collector_client.h"
 
 namespace sdv {
 namespace broker_feeder {
 namespace kuksa {
 
-typedef std::map<std::string, ::kuksa::val::v1::Datapoint> ActuatorValues;
+typedef std::map<std::string, ::kuksa::val::v2::Datapoint> ActuatorValues;
 
 typedef std::function<void(ActuatorValues target_values)> ActuatorChangeCallback;
 

@@ -27,7 +27,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "data_broker_feeder.h"
-#include "sdv/databroker/v1/collector.grpc.pb.h"
+#include "kuksa/val/v2/val.grpc.pb.h"
 
 #include "simple_log.h"
 
@@ -37,8 +37,6 @@ LOGGER_STATIC_INIT("# DataBrokerFeeder::");
 namespace sdv {
 namespace broker_feeder {
 
-using DatapointId = google::protobuf::int32;
-
 class DataBrokerFeederImpl final:
     public DataBrokerFeeder
 {
@@ -46,7 +44,6 @@ private:
     const GrpcMetadata grpc_metadata_;
     const DatapointConfiguration dp_config_;
     DatapointValues stored_values_;
-    google::protobuf::Map<std::string, DatapointId> id_map_;
 
     std::atomic<bool> feeder_active_;
     std::string broker_addr_;
@@ -82,13 +79,7 @@ private:
             if (client_->Connected()) {
                 LOG_INFO << "connected to data broker." << std::endl;
             }
-            if (feeder_active_ && client_->Connected()) {
-                if (!registerDatapoints()) {
-                    // don't attempt to feed values (too often) if registration status was an error
-                    std::this_thread::sleep_for(std::chrono::seconds(5));
-                    continue;
-                }
-            }
+            // v2: no registration step — databroker pre-registers all VSS signals
 
             bool also_feed_initial_values = true;
             while (feeder_active_ && client_->Connected()) {
@@ -140,7 +131,7 @@ private:
     /** Feed a single datapoint value to the data broker.
      *  (@see FeedValues)
      */
-    void FeedValue(const std::string& name, const sdv::databroker::v1::Datapoint& value) override
+    void FeedValue(const std::string& name, const kuksa::val::v2::Datapoint& value) override
     {
         if (feeder_active_) {
             LOG_TRACE << "Enqueue value: { " << value.ShortDebugString() << " } " << std::endl;
@@ -159,43 +150,11 @@ private:
     }
 
     /** Add the passed value to the stored values (possibly overwriting an already stored value) */
-    void storeValue(const std::string& name, const sdv::databroker::v1::Datapoint& value) {
+    void storeValue(const std::string& name, const kuksa::val::v2::Datapoint& value) {
         stored_values_[name] = value;
     }
 
-    /** Register the data points (metadata) passed to the c-tor with the data broker.
-     */
-    bool registerDatapoints() {
-        LOG_DEBUG << "Registering " << dp_config_.size() << " datapoints." << std::endl;
-        sdv::databroker::v1::RegisterDatapointsRequest request;
-        for (const auto& metadata : dp_config_) {
-            ::sdv::databroker::v1::RegistrationMetadata reg_data;
-            reg_data.set_name(metadata.name);
-            reg_data.set_data_type(metadata.data_type);
-            reg_data.set_change_type(metadata.change_type);
-            reg_data.set_description(metadata.description);
-            request.mutable_list()->Add(std::move(reg_data));
-        }
-
-        auto context = client_->createClientContext();
-        sdv::databroker::v1::RegisterDatapointsReply reply;
-        grpc::Status status = client_->RegisterDatapoints(context.get(), request, &reply);
-        if (status.ok()) {
-            LOG_INFO << "Datapoints registered." << std::endl;
-            id_map_ = std::move(*reply.mutable_results());
-            for (const auto& name_to_id : id_map_) {
-                LOG_DEBUG << "    '" << name_to_id.first << "' -> " << std::dec << name_to_id.second << std::endl;
-            }
-            return true;
-        } else {
-            client_->handleGrpcError(status, "DataBrokerFeederImpl::registerDatapoints");
-            return false;
-        }
-    }
-
-    /** Feed stored and - on demand - initial values to the data broker.
-     *  If for a datapoint an initial as well as a stored value is present, the stored on gets precedence.
-     */
+    /** Feed stored and - on demand - initial values to the data broker. */
     void feedStoredValues(bool feed_initial_values = false) {
         DatapointValues values_to_feed;
         {
@@ -213,32 +172,26 @@ private:
         }
     }
 
-    /** Feed the passed values to the data broker. */
+    /** Feed the passed values to the data broker using v2 PublishValue (one call per signal). */
     bool feedToBroker(const DatapointValues& values_to_feed) {
         LOG_DEBUG << "Feeding " << std::dec << values_to_feed.size() << " values." << std::endl;
-        sdv::databroker::v1::UpdateDatapointsRequest request;
-        for (const auto& value : values_to_feed) {
-            auto iter = id_map_.find(value.first);
-            if (iter != id_map_.end()) {
-                auto id = iter->second;
-                (*request.mutable_datapoints())[id] = value.second;
-                LOG_DEBUG <<"    '"<< value.first <<"' ("<< id <<") of type "
-                    << std::dec << (int)value.second.value_case()
-                    << ", value: { " << value.second.ShortDebugString() << " }"
-                    << std::endl;
-            } else {
-                LOG_ERROR <<"    Unknown name '" << value.first << "'!" << std::endl;
+        for (const auto& entry : values_to_feed) {
+            kuksa::val::v2::PublishValueRequest request;
+            request.mutable_signal_id()->set_path(entry.first);
+            *request.mutable_data_point() = entry.second;
+
+            LOG_DEBUG << "    '" << entry.first
+                      << "', value: { " << entry.second.ShortDebugString() << " }" << std::endl;
+
+            auto context = client_->createClientContext();
+            kuksa::val::v2::PublishValueResponse response;
+            grpc::Status status = client_->PublishValue(context.get(), request, &response);
+            if (!status.ok()) {
+                client_->handleGrpcError(status, "DataBrokerFeederImpl::feedToBroker");
+                return false;
             }
         }
-
-        auto context = client_->createClientContext();
-        sdv::databroker::v1::UpdateDatapointsReply reply;
-        grpc::Status status = client_->UpdateDatapoints(context.get(), request, &reply);
-        if (status.ok()) {
-            return true;
-        }
-        client_->handleGrpcError(status, "DataBrokerFeederImpl::feedToBroker");
-        return false;
+        return true;
     }
 
     /** Re-store values on a feeding error; already contained values are rated newer and are not overwritten */

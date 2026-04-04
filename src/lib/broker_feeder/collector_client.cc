@@ -43,8 +43,7 @@ CollectorClient::CollectorClient(std::string broker_addr, std::string auth_token
     changeToDaprPortIfSet(broker_addr);
     metadata_ = getGrpcMetadata();
     channel_ = grpc::CreateChannel(broker_addr, grpc::InsecureChannelCredentials());
-    stub_ = sdv::databroker::v1::Collector::NewStub(channel_);
-    kuksa_stub_ = kuksa::val::v1::VAL::NewStub(channel_);
+    val_stub_ = kuksa::val::v2::VAL::NewStub(channel_);
 }
 
 bool CollectorClient::WaitForConnected(std::chrono::_V2::system_clock::time_point deadline) {
@@ -98,22 +97,16 @@ void CollectorClient::changeToDaprPortIfSet(std::string& broker_addr) {
     }
 }
 
-::grpc::Status CollectorClient::RegisterDatapoints(::grpc::ClientContext* context,
-                                                   const ::sdv::databroker::v1::RegisterDatapointsRequest& request,
-                                                   ::sdv::databroker::v1::RegisterDatapointsReply* response) {
-    return stub_->RegisterDatapoints(context, request, response);
+::grpc::Status CollectorClient::PublishValue(::grpc::ClientContext* context,
+                                              const ::kuksa::val::v2::PublishValueRequest& request,
+                                              ::kuksa::val::v2::PublishValueResponse* response) {
+    return val_stub_->PublishValue(context, request, response);
 }
 
-::grpc::Status CollectorClient::UpdateDatapoints(::grpc::ClientContext* context,
-                                                 const ::sdv::databroker::v1::UpdateDatapointsRequest& request,
-                                                 ::sdv::databroker::v1::UpdateDatapointsReply* response) {
-    return stub_->UpdateDatapoints(context, request, response);
-}
-
-std::unique_ptr<::grpc::ClientReader<::kuksa::val::v1::SubscribeResponse>>
-CollectorClient::Subscribe(::grpc::ClientContext *context,
-                           const ::kuksa::val::v1::SubscribeRequest &request) {
-    return kuksa_stub_->Subscribe(context, request);
+std::unique_ptr<::grpc::ClientReader<::kuksa::val::v2::SubscribeResponse>>
+CollectorClient::Subscribe(::grpc::ClientContext* context,
+                           const ::kuksa::val::v2::SubscribeRequest& request) {
+    return val_stub_->Subscribe(context, request);
 }
 
 /** Create the client context for a gRPC call and add possible gRPC metadata */

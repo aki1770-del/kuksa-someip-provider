@@ -99,17 +99,14 @@ void ActuatorSubscriber::Run() {
         }
         LOG_INFO << "Connected to [" << client_->GetBrokerAddr() << "]" << std::endl;
 
-        ::kuksa::val::v1::SubscribeResponse response;
-        ::kuksa::val::v1::SubscribeRequest request;
+        ::kuksa::val::v2::SubscribeResponse response;
+        ::kuksa::val::v2::SubscribeRequest request;
         for (auto i=0; i<actuators_.size(); i++) {
-            auto entry = request.add_entries();
-            entry->set_path(actuators_[i]);
-            entry->add_fields(::kuksa::val::v1::Field::FIELD_ACTUATOR_TARGET);
-            entry->add_fields(::kuksa::val::v1::Field::FIELD_METADATA);
+            request.add_signal_paths(actuators_[i]);
         }
 
         // guard subscriber_context_ for concurrent access on Shutdown()
-        std::unique_ptr<::grpc::ClientReader<::kuksa::val::v1::SubscribeResponse>> reader = nullptr;
+        std::unique_ptr<::grpc::ClientReader<::kuksa::val::v2::SubscribeResponse>> reader = nullptr;
         {
             std::lock_guard<std::mutex> lock(context_mutex_);
             subscriber_context_ = client_->createClientContext();
@@ -121,20 +118,17 @@ void ActuatorSubscriber::Run() {
         }
 
         while (subscriber_active_ && reader->Read(&response)) {
-            LOG_TRACE << "[SUB] updates_size:" << response.updates_size() << std::endl;
+            LOG_TRACE << "[SUB] entries_size:" << response.entries_size() << std::endl;
             ActuatorValues changes;
-            for (auto& update : response.updates()) {
+            for (auto& entry_pair : response.entries()) {
                 if (!subscriber_active_) break;
                 if (LOGGER_ENABLED(LEVEL_DBG)) {
                     std::stringstream ss;
-                    ss  << "[SUB] " << update.entry().path()
-                        << ", value_case:" << static_cast<int>(update.entry().actuator_target().value_case())
-                        << ", target: { " << update.entry().actuator_target().ShortDebugString() << " }";
+                    ss  << "[SUB] " << entry_pair.first
+                        << ", value: { " << entry_pair.second.ShortDebugString() << " }";
                     LOG_DEBUG << ss.str() << std::endl;
                 }
-                changes.emplace(
-                    update.entry().path(),
-                    update.entry().actuator_target());
+                changes.emplace(entry_pair.first, entry_pair.second);
             }
             if (cb_ && subscriber_active_) {
                 cb_(changes);

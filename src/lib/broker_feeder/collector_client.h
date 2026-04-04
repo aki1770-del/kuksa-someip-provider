@@ -17,8 +17,8 @@
 #include <atomic>
 #include <memory>
 
-#include "sdv/databroker/v1/collector.grpc.pb.h"
-#include "kuksa/val/v1/val.grpc.pb.h"
+#include "kuksa/val/v2/val.grpc.pb.h"
+#include "kuksa/val/v2/types.pb.h"
 
 namespace sdv {
 namespace broker_feeder {
@@ -61,17 +61,15 @@ public:
 
     std::unique_ptr<grpc::ClientContext> createClientContext();
 
-    ::grpc::Status RegisterDatapoints(::grpc::ClientContext* context,
-                const ::sdv::databroker::v1::RegisterDatapointsRequest& request,
-                ::sdv::databroker::v1::RegisterDatapointsReply* response);
+    /** Publish a single signal value to the databroker (replaces v1 UpdateDatapoints). */
+    ::grpc::Status PublishValue(::grpc::ClientContext* context,
+                const ::kuksa::val::v2::PublishValueRequest& request,
+                ::kuksa::val::v2::PublishValueResponse* response);
 
-    ::grpc::Status UpdateDatapoints(::grpc::ClientContext* context,
-                const ::sdv::databroker::v1::UpdateDatapointsRequest& request,
-                ::sdv::databroker::v1::UpdateDatapointsReply* response);
-
-	std::unique_ptr<::grpc::ClientReader<::kuksa::val::v1::SubscribeResponse>> Subscribe(
-				::grpc::ClientContext *context,
-                const ::kuksa::val::v1::SubscribeRequest &request);
+    /** Subscribe to a set of signals by VSS path (replaces v1 Subscribe). */
+    std::unique_ptr<::grpc::ClientReader<::kuksa::val::v2::SubscribeResponse>> Subscribe(
+                ::grpc::ClientContext* context,
+                const ::kuksa::val::v2::SubscribeRequest& request);
 
     /** Log the gRPC error information and
      *   - either trigger re-connection and "recoverable" errors
@@ -94,8 +92,7 @@ protected:
 private:
     GrpcMetadata metadata_;
     std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<sdv::databroker::v1::Collector::Stub> stub_;
-    std::unique_ptr<kuksa::val::v1::VAL::Stub> kuksa_stub_;
+    std::unique_ptr<kuksa::val::v2::VAL::Stub> val_stub_;
     std::atomic<bool> connected_;
     std::atomic<bool> active_;
     std::string broker_addr_;
