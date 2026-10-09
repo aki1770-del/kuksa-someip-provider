@@ -119,7 +119,11 @@ if [ "$DOCKER_ARCH" = "multiarch" ]; then
 	DOCKER_ARGS="--platform linux/amd64,linux/arm64 -t $DOCKER_ARCH/$DOCKER_IMAGE --output type=oci,dest=$DOCKER_EXPORT"
 else
 	if [ $LOCAL -eq 1 ]; then
-		DOCKER_ARGS="--load -t $DOCKER_ARCH/$DOCKER_IMAGE"
+		# Without an explicit --platform, buildx sets TARGETPLATFORM from the
+		# host, so on an amd64 host the Dockerfile takes the amd64 branch and
+		# an image tagged arm64/... contains x86_64 binaries. The non-local
+		# branch below already passes --platform; this makes the two agree.
+		DOCKER_ARGS="--platform linux/$DOCKER_ARCH --load -t $DOCKER_ARCH/$DOCKER_IMAGE"
 		DOCKER_EXPORT="($DOCKER_ARCH/$DOCKER_IMAGE ghcr.io/boschglobal/kuksa.val.feeders/$DOCKER_IMAGE:prerelease)"
 	else
 		DOCKER_ARGS="--platform linux/$DOCKER_ARCH -t $DOCKER_ARCH/$DOCKER_IMAGE --output type=oci,dest=$DOCKER_EXPORT"
